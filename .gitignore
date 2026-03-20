@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Recorded shots (user data, not source code)
+shots/
+
+# Temp encoding folders and stray temp BMP files
+temp_*/
+temp_*.BMP
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Test output
+test_*.gif
+test_*.bmp

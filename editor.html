@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Gifshoot Editor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:#0e0e0e;color:#ddd;font-family:'Consolas','Courier New',monospace;display:flex}
+
+/* ── Sidebar ── */
+#sidebar{width:260px;min-width:260px;background:#1a1a1a;display:flex;flex-direction:column;border-right:1px solid #333;overflow-y:auto}
+#sidebar h2{text-align:center;padding:14px 0 8px;color:#ff5555;font-size:15px;letter-spacing:2px}
+.tool-tabs{display:flex;border-bottom:1px solid #333}
+.tool-tab{flex:1;text-align:center;padding:8px 0;cursor:pointer;font-size:12px;color:#888;border-bottom:2px solid transparent;transition:.2s}
+.tool-tab:hover{color:#ccc}
+.tool-tab.active{color:#fff;border-bottom-color:#ff5555}
+.panel{display:none;padding:14px 16px;flex:1}
+.panel.active{display:block}
+.row{margin-bottom:14px}
+.row label{display:block;font-size:11px;color:#999;margin-bottom:4px}
+.row-val{font-size:12px;color:#ccc;word-break:break-all}
+input[type=range]{width:100%;accent-color:#ff5555}
+select,button{font-family:inherit;font-size:12px}
+select{width:100%;padding:5px;background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:3px}
+.btn{width:100%;padding:8px 0;border:none;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px;color:#fff;transition:.15s}
+.btn:hover{filter:brightness(1.2)}
+.btn-red{background:#cc3333}
+.btn-green{background:#2e7d32}
+.btn-blue{background:#1565c0}
+.btn-gray{background:#444}
+.btn:disabled{opacity:.4;cursor:default}
+.hint{font-size:10px;color:#666;margin-top:4px}
+
+/* ── Main ── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#toolbar-top{display:flex;align-items:center;gap:10px;padding:6px 14px;background:#161616;border-bottom:1px solid #282828;font-size:12px;color:#888}
+#canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+#canvas-wrap canvas{background:#000;cursor:crosshair}
+#timeline{height:64px;background:#161616;border-top:1px solid #282828;padding:6px 14px;display:flex;flex-direction:column;justify-content:center}
+#timeline .labels{display:flex;justify-content:space-between;font-size:10px;color:#666;margin-bottom:2px}
+#tl-container{position:relative;height:28px;background:#222;border-radius:3px;overflow:hidden}
+#tl-bar{position:absolute;top:0;height:100%;background:rgba(255,85,85,.25);pointer-events:none}
+#tl-playhead{position:absolute;top:0;width:2px;height:100%;background:#ff5555;pointer-events:none}
+#tl-track{width:100%;height:100%;cursor:pointer;position:relative;z-index:1}
+
+/* loading overlay */
+#loading{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:999;font-size:16px}
+#loading.hidden{display:none}
+#drop-zone{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:998;font-size:20px;color:#ff5555;border:4px dashed #ff5555}
+</style>
+</head>
+<body>
+
+<div id="loading">GIF を読み込み中…</div>
+<div id="drop-zone">GIF ファイルをドロップ</div>
+
+<!-- ===== SIDEBAR ===== -->
+<div id="sidebar">
+  <h2>GIFSHOOT EDITOR</h2>
+
+  <div class="tool-tabs">
+    <div class="tool-tab active" data-tab="tab-trim">Trim</div>
+    <div class="tool-tab" data-tab="tab-mosaic">Mosaic</div>
+    <div class="tool-tab" data-tab="tab-stamp">Stamp</div>
+    <div class="tool-tab" data-tab="tab-export">Export</div>
+  </div>
+
+  <!-- Trim -->
+  <div id="tab-trim" class="panel active">
+    <div class="row"><label>ファイル名</label><div class="row-val" id="info-name">-</div></div>
+    <div class="row"><label>サイズ</label><div class="row-val" id="info-size">-</div></div>
+    <div class="row"><label>フレーム数</label><div class="row-val" id="info-frames">-</div></div>
+    <div class="row">
+      <label>始点フレーム: <span id="trimStartVal">0</span></label>
+      <input type="range" id="trimStart" min="0" max="0" value="0">
+    </div>
+    <div class="row">
+      <label>終点フレーム: <span id="trimEndVal">0</span></label>
+      <input type="range" id="trimEnd" min="0" max="0" value="0">
+    </div>
+    <button class="btn btn-gray" id="btnPlay">▶ 再生 / 停止</button>
+    <br><br>
+    <button class="btn btn-red" id="btnCutFrame">現在のフレームを削除</button>
+  </div>
+
+  <!-- Mosaic -->
+  <div id="tab-mosaic" class="panel">
+    <div class="row"><label>ブロックサイズ</label>
+      <select id="mosaicSize">
+        <option value="8">S (8px)</option>
+        <option value="16" selected>M (16px)</option>
+        <option value="32">L (32px)</option>
+      </select>
+    </div>
+    <div class="hint">Canvas 上でドラッグして矩形を選択してください。</div>
+    <br>
+    <button class="btn btn-blue" id="btnMosaicApply" disabled>選択範囲にモザイク適用</button>
+    <br><br>
+    <button class="btn btn-gray" id="btnMosaicClear">選択をクリア</button>
+  </div>
+
+  <!-- Stamp -->
+  <div id="tab-stamp" class="panel">
+    <div class="row"><label>スタンプ画像を追加</label>
+      <input type="file" id="stampFile" accept="image/png,image/jpeg,image/webp">
+    </div>
+    <div class="row"><label>サイズ: <span id="stampSizeVal">100</span>px</label>
+      <input type="range" id="stampSizeRange" min="16" max="512" value="100">
+    </div>
+    <div class="row">
+      <label>現在のスタンプ:</label>
+      <div id="stampsList" style="background:#222; border:1px solid #444; border-radius:3px; padding:5px; max-height:100px; overflow-y:auto; min-height:30px; font-size:11px;">
+        <div style="color:#666; text-align:center;">スタンプがありません</div>
+      </div>
+    </div>
+    <div class="hint">画像を読み込むと追加されます。Canvas 上をクリック＆ドラッグで移動。</div>
+    <br>
+    <button class="btn btn-blue" id="btnStampApply" disabled>全フレームにスタンプ焼き込み</button>
+    <br><br>
+    <button class="btn btn-gray" id="btnStampRemove">すべてのスタンプをクリア</button>
+  </div>
+
+  <!-- Export -->
+  <div id="tab-export" class="panel">
+    <div class="row"><label>出力フレーム (GIF)</label><div class="row-val" id="exportInfo">-</div></div>
+    <br>
+    <button class="btn btn-green" id="btnExport">GIF をダウンロード</button>
+    <div class="hint" id="exportStatus" style="margin-bottom:20px;"></div>
+    
+    <hr style="border:0; border-top:1px solid #333; margin: 15px 0;">
+    
+    <div class="row">
+      <label>現在のフレームを静止画で保存</label>
+      <div style="font-size:12px; margin-bottom:10px;">
+        <label style="display:inline; margin-right:10px;"><input type="radio" name="imgExt" value="png" checked> .png</label>
+        <label style="display:inline;"><input type="radio" name="imgExt" value="jpeg"> .jpg</label>
+      </div>
+    </div>
+    <button class="btn btn-blue" id="btnExportImage">選択したフレームをダウンロード</button>
+  </div>
+</div>
+
+<!-- ===== MAIN ===== -->
+<div id="main">
+  <div id="toolbar-top">
+    <span id="frameIndicator">Frame: 0 / 0</span>
+    <span style="flex:1"></span>
+    <span id="toolMode">Tool: Trim</span>
+  </div>
+  <div id="canvas-wrap" style="display:flex; gap:20px; align-items:center; justify-content:center;">
+    <div style="display:flex; flex-direction:column; align-items:center;">
+      <div id="cvTitle" style="color:#aaa; font-size:12px; margin-bottom:5px;">Preview</div>
+      <canvas id="cv"></canvas>
+    </div>
+    <div id="cvEnd-wrap" style="display:none; flex-direction:column; align-items:center;">
+      <div style="color:#aaa; font-size:12px; margin-bottom:5px;">End Frame</div>
+      <canvas id="cvEnd"></canvas>
+    </div>
+  </div>
+  <div id="timeline">
+    <div class="labels"><span id="tlLabelStart">0</span><span id="tlLabelEnd">0</span></div>
+    <div id="tl-container">
+      <div id="tl-bar"></div>
+      <div id="tl-playhead"></div>
+      <canvas id="tl-track"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- omggif for decoding, gifenc for encoding -->
+<script src="https://cdn.jsdelivr.net/npm/omggif@1.0.10/omggif.js"></script>
+
+<script type="module">
+import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
+window.GIFEnc = { GIFEncoder, quantize, applyPalette };
+
+/* =========================================================
+   G L O B A L   S T A T E
+   ========================================================= */
+let framesData = [];        // {imageData, delay}
+let currentFrame = 0;
+let trimStart = 0, trimEnd = 0;
+let playing = false, playTimer = null;
+let activeTab = 'tab-trim';
+
+// mosaic
+let mosaicRect = null;   // {x,y,w,h} in image coords
+let mosaicDragging = false, mosaicOrigin = null;
+
+// stamp (multiple)
+let stamps = []; // array of {img, x, y, size}
+let stampDraggingIndex = -1, stampDragOffsetX = 0, stampDragOffsetY = 0;
+
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const cvEnd = document.getElementById('cvEnd');
+const ctxEnd = cvEnd.getContext('2d');
+const $   = id => document.getElementById(id);
+
+/* =========================================================
+   T A B S
+   ========================================================= */
+document.querySelectorAll('.tool-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tool-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    const id = tab.dataset.tab;
+    $(id).classList.add('active');
+    activeTab = id;
+    $('toolMode').textContent = 'Tool: ' + tab.textContent;
+    mosaicRect = null;
+    drawFrame();
+  });
+});
+
+/* =========================================================
+   L O A D   G I F
+   ========================================================= */
+async function loadGif(src) {
+  $('loading').classList.remove('hidden');
+  try {
+    let buf;
+    if (src instanceof ArrayBuffer) {
+      buf = src;
+    } else {
+      const resp = await fetch(src);
+      buf = await resp.arrayBuffer();
+    }
+    
+    // Parse using omggif
+    const gr = new GifReader(new Uint8Array(buf));
+    const w = gr.width;
+    const h = gr.height;
+
+    framesData = [];
+    const tcv = document.createElement('canvas');
+    tcv.width = w; tcv.height = h;
+    const tctx = tcv.getContext('2d');
+    const imageData = tctx.createImageData(w, h);
+    
+    let prevImageData = null;
+
+    for (let i = 0; i < gr.numFrames(); i++) {
+      const fi = gr.frameInfo(i);
+      
+      // Save state if disposal is 3 (restore to previous)
+      if (fi.disposal === 3) {
+        prevImageData = new Uint8ClampedArray(imageData.data);
+      }
+      
+      // decodeAndBlitFrameRGBA mutates imageData.data in-place
+      gr.decodeAndBlitFrameRGBA(i, imageData.data);
+      
+      framesData.push({ 
+        imageData: new ImageData(new Uint8ClampedArray(imageData.data), w, h), 
+        delay: (fi.delay * 10) || 100 
+      });
+      
+      // Handle disposal for the NEXT frame to draw over
+      if (fi.disposal === 2) {
+        // Restore to background (transparent) for the area of this frame
+        for (let y = fi.y; y < fi.y + fi.height; y++) {
+          for (let x = fi.x; x < fi.x + fi.width; x++) {
+            const idx = (y * w + x) * 4;
+            // set to transparent black
+            imageData.data[idx] = imageData.data[idx+1] = imageData.data[idx+2] = imageData.data[idx+3] = 0;
+          }
+        }
+      } else if (fi.disposal === 3 && prevImageData) {
+        // Restore to previous state
+        imageData.data.set(prevImageData);
+      }
+    }
+
+    cv.width = w; cv.height = h;
+    cvEnd.width = w; cvEnd.height = h;
+    currentFrame = 0;
+    trimStart = 0;
+    trimEnd = framesData.length - 1;
+
+    // UI
+    $('trimStart').max = framesData.length - 1; $('trimStart').value = 0;
+    $('trimEnd').max   = framesData.length - 1; $('trimEnd').value = framesData.length - 1;
+    $('trimStartVal').textContent = 0;
+    $('trimEndVal').textContent = framesData.length - 1;
+    $('info-frames').textContent = framesData.length;
+    $('tlLabelEnd').textContent = framesData.length - 1;
+
+    updateTimeline();
+    drawFrame();
+  } catch(e) {
+    console.error(e);
+    alert('GIF の読み込みに失敗しました。\n\nfile:// から開いている場合、ブラウザが fetch をブロックしている可能性があります。\nページにGIFファイルをドラッグ＆ドロップしてください。');
+  }
+  $('loading').classList.add('hidden');
+}
+
+/* ---- init from URL param ---- */
+const urlFile = new URLSearchParams(location.search).get('file');
+if (urlFile) {
+  $('info-name').textContent = urlFile;
+  loadGif(urlFile);
+} else {
+  $('loading').classList.add('hidden');
+  $('info-name').textContent = 'ファイルをドラッグ＆ドロップ';
+}
+
+/* ---- drag & drop fallback ---- */
+window.addEventListener('dragover', e => { e.preventDefault(); $('drop-zone').style.display = 'flex'; });
+window.addEventListener('dragleave', e => { if(e.relatedTarget) return; $('drop-zone').style.display = 'none'; });
+window.addEventListener('drop', e => {
+  e.preventDefault(); $('drop-zone').style.display = 'none';
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  $('info-name').textContent = f.name;
+  $('info-size').textContent = (f.size/1024).toFixed(1) + ' KB';
+  const r = new FileReader();
+  r.onload = () => loadGif(r.result);
+  r.readAsArrayBuffer(f);
+});
+
+/* =========================================================
+   D R A W
+   ========================================================= */
+function drawFrame() {
+  if (!framesData.length) return;
+  const f = framesData[currentFrame];
+  ctx.putImageData(f.imageData, 0, 0);
+
+  // Overlay mosaic rect if selecting
+  if (activeTab === 'tab-mosaic' && mosaicRect) {
+    ctx.save();
+    ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.setLineDash([6,3]);
+    ctx.strokeRect(mosaicRect.x, mosaicRect.y, mosaicRect.w, mosaicRect.h);
+    ctx.restore();
+  }
+
+  // Overlay multiple stamps
+  stamps.forEach(s => {
+    const sh = s.size * (s.img.height/s.img.width);
+    ctx.drawImage(s.img, s.x, s.y, s.size, sh);
+  });
+
+  $('frameIndicator').textContent = `Frame: ${currentFrame} / ${framesData.length - 1}`;
+  updatePlayhead();
+  
+  // Show End Canvas only in Trim mode
+  if (activeTab === 'tab-trim') {
+    $('cvTitle').textContent = 'Start/Preview Frame';
+    $('cvEnd-wrap').style.display = 'flex';
+    ctxEnd.putImageData(framesData[trimEnd].imageData, 0, 0);
+    // Draw stamps on End canvas too
+    stamps.forEach(s => {
+      const sh = s.size * (s.img.height/s.img.width);
+      ctxEnd.drawImage(s.img, s.x, s.y, s.size, sh);
+    });
+  } else {
+    $('cvTitle').textContent = 'Preview';
+    $('cvEnd-wrap').style.display = 'none';
+  }
+}
+
+/* =========================================================
+   T I M E L I N E
+   ========================================================= */
+function updateTimeline() {
+  const total = framesData.length || 1;
+  $('tl-bar').style.left  = (trimStart / total * 100) + '%';
+  $('tl-bar').style.width = ((trimEnd - trimStart + 1) / total * 100) + '%';
+  $('tlLabelStart').textContent = trimStart;
+  $('tlLabelEnd').textContent = trimEnd;
+  $('exportInfo').textContent = `${trimEnd - trimStart + 1} フレーム (${trimStart}–${trimEnd})`;
+
+  // draw mini thumbnails on timeline track
+  const tlCanvas = $('tl-track');
+  const tc = tlCanvas.getContext('2d');
+  const cw = tlCanvas.parentElement.clientWidth;
+  tlCanvas.width = cw; tlCanvas.height = 28;
+  tc.fillStyle = '#222'; tc.fillRect(0,0,cw,28);
+  const step = Math.max(1, Math.floor(framesData.length / cw));
+  for (let i = 0; i < framesData.length; i += step) {
+    const x = (i / framesData.length) * cw;
+    const tmpC = document.createElement('canvas');
+    tmpC.width = framesData[i].imageData.width;
+    tmpC.height = framesData[i].imageData.height;
+    tmpC.getContext('2d').putImageData(framesData[i].imageData, 0, 0);
+    tc.drawImage(tmpC, x, 0, Math.max(2, cw/framesData.length), 28);
+  }
+}
+
+function updatePlayhead() {
+  if (!framesData.length) return;
+  $('tl-playhead').style.left = (currentFrame / framesData.length * 100) + '%';
+}
+
+$('tl-track').addEventListener('click', e => {
+  if (!framesData.length) return;
+  const rect = e.target.getBoundingClientRect();
+  const ratio = (e.clientX - rect.left) / rect.width;
+  currentFrame = Math.round(ratio * (framesData.length - 1));
+  currentFrame = Math.max(trimStart, Math.min(trimEnd, currentFrame));
+  drawFrame();
+});
+
+/* =========================================================
+   T R I M   S L I D E R S
+   ========================================================= */
+$('trimStart').addEventListener('input', e => {
+  trimStart = +e.target.value;
+  if (trimStart > trimEnd) { trimEnd = trimStart; $('trimEnd').value = trimEnd; $('trimEndVal').textContent = trimEnd; }
+  $('trimStartVal').textContent = trimStart;
+  currentFrame = trimStart; // always preview the frame being adjusted
+  updateTimeline(); drawFrame();
+});
+$('trimEnd').addEventListener('input', e => {
+  trimEnd = +e.target.value;
+  if (trimEnd < trimStart) { trimStart = trimEnd; $('trimStart').value = trimStart; $('trimStartVal').textContent = trimStart; }
+  $('trimEndVal').textContent = trimEnd;
+  // keep currentFrame within bounds
+  if (currentFrame > trimEnd) currentFrame = trimEnd;
+  updateTimeline(); drawFrame();
+});
+
+/* =========================================================
+   P L A Y  /  S T O P
+   ========================================================= */
+$('btnPlay').addEventListener('click', () => {
+  if (playing) { stopPlay(); return; }
+  playing = true; $('btnPlay').textContent = '⏸ 停止';
+  playNext();
+});
+function playNext() {
+  if (!playing) return;
+  currentFrame++;
+  if (currentFrame > trimEnd) currentFrame = trimStart;
+  drawFrame();
+  playTimer = setTimeout(playNext, framesData[currentFrame].delay);
+}
+function stopPlay() {
+  playing = false; clearTimeout(playTimer);
+  $('btnPlay').textContent = '▶ 再生 / 停止';
+}
+
+/* =========================================================
+   C U T   F R A M E
+   ========================================================= */
+$('btnCutFrame').addEventListener('click', () => {
+  if (framesData.length <= 1) {
+    alert('これ以上フレームを削除できません！');
+    return;
+  }
+  
+  // Remove the currently displayed frame
+  framesData.splice(currentFrame, 1);
+  
+  // Adjust trim ranges and currentFrame to stay within bounds
+  const maxIdx = framesData.length - 1;
+  if (currentFrame > maxIdx) currentFrame = maxIdx;
+  if (trimEnd > maxIdx) {
+    trimEnd = maxIdx;
+    $('trimEnd').value = trimEnd;
+    $('trimEndVal').textContent = trimEnd;
+  }
+  if (trimStart > trimEnd) {
+    trimStart = trimEnd;
+    $('trimStart').value = trimStart;
+    $('trimStartVal').textContent = trimStart;
+  }
+  
+  // Update sliders max values
+  $('trimStart').max = maxIdx;
+  $('trimEnd').max = maxIdx;
+  $('info-frames').textContent = framesData.length;
+  $('tlLabelEnd').textContent = framesData.length - 1;
+  
+  updateTimeline(); 
+  drawFrame();
+});
+
+/* =========================================================
+   C A N V A S   M O U S E   ( Mosaic / Stamp )
+   ========================================================= */
+function canvasCoords(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: Math.round((e.clientX - r.left) * cv.width / r.width),
+           y: Math.round((e.clientY - r.top)  * cv.height / r.height) };
+}
+
+cv.addEventListener('mousedown', e => {
+  const p = canvasCoords(e);
+  if (activeTab === 'tab-mosaic') {
+    mosaicDragging = true;
+    mosaicOrigin = p;
+    mosaicRect = { x: p.x, y: p.y, w: 0, h: 0 };
+  }
+  if (activeTab === 'tab-stamp' && stamps.length > 0) {
+    // Check collision from top to bottom
+    stampDraggingIndex = -1;
+    for (let i = stamps.length - 1; i >= 0; i--) {
+      const s = stamps[i];
+      const sh = s.size * (s.img.height/s.img.width);
+      if (p.x >= s.x && p.x <= s.x + s.size && p.y >= s.y && p.y <= s.y + sh) {
+        stampDraggingIndex = i;
+        stampDragOffsetX = p.x - s.x;
+        stampDragOffsetY = p.y - s.y;
+        break;
+      }
+    }
+  }
+});
+cv.addEventListener('mousemove', e => {
+  const p = canvasCoords(e);
+  if (activeTab === 'tab-mosaic' && mosaicDragging) {
+    mosaicRect = {
+      x: Math.min(mosaicOrigin.x, p.x), y: Math.min(mosaicOrigin.y, p.y),
+      w: Math.abs(p.x - mosaicOrigin.x), h: Math.abs(p.y - mosaicOrigin.y)
+    };
+    drawFrame();
+  }
+  if (activeTab === 'tab-stamp' && stampDraggingIndex !== -1) {
+    const s = stamps[stampDraggingIndex];
+    s.x = p.x - stampDragOffsetX;
+    s.y = p.y - stampDragOffsetY;
+    drawFrame();
+  }
+});
+cv.addEventListener('mouseup', () => {
+  if (mosaicDragging) {
+    mosaicDragging = false;
+    $('btnMosaicApply').disabled = !(mosaicRect && mosaicRect.w > 2 && mosaicRect.h > 2);
+  }
+  stampDraggingIndex = -1;
+});
+
+/* =========================================================
+   M O S A I C
+   ========================================================= */
+$('btnMosaicApply').addEventListener('click', () => {
+  if (!mosaicRect) return;
+  const bs = +$('mosaicSize').value;
+  const {x,y,w,h} = mosaicRect;
+  for (let i = trimStart; i <= trimEnd; i++) {
+    const d = framesData[i].imageData;
+    const px = d.data;
+    for (let by = y; by < y+h; by += bs) {
+      for (let bx = x; bx < x+w; bx += bs) {
+        let r=0,g=0,b=0,cnt=0;
+        for (let dy=0; dy<bs && by+dy<y+h && by+dy<d.height; dy++) {
+          for (let dx=0; dx<bs && bx+dx<x+w && bx+dx<d.width; dx++) {
+            const idx = ((by+dy)*d.width+(bx+dx))*4;
+            r += px[idx]; g += px[idx+1]; b += px[idx+2]; cnt++;
+          }
+        }
+        r = Math.round(r/cnt); g = Math.round(g/cnt); b = Math.round(b/cnt);
+        for (let dy=0; dy<bs && by+dy<y+h && by+dy<d.height; dy++) {
+          for (let dx=0; dx<bs && bx+dx<x+w && bx+dx<d.width; dx++) {
+            const idx = ((by+dy)*d.width+(bx+dx))*4;
+            px[idx]=r; px[idx+1]=g; px[idx+2]=b;
+          }
+        }
+      }
+    }
+  }
+  mosaicRect = null;
+  $('btnMosaicApply').disabled = true;
+  drawFrame();
+  alert('モザイクを適用しました。');
+});
+$('btnMosaicClear').addEventListener('click', () => { mosaicRect = null; $('btnMosaicApply').disabled = true; drawFrame(); });
+
+/* =========================================================
+   S T A M P
+   ========================================================= */
+let currentStampSize = 100;
+
+function updateStampList() {
+  const list = $('stampsList');
+  if (stamps.length === 0) {
+    list.innerHTML = '<div style="color:#666; text-align:center;">スタンプがありません</div>';
+    $('btnStampApply').disabled = true;
+    return;
+  }
+  list.innerHTML = '';
+  stamps.forEach((s, idx) => {
+    const item = document.createElement('div');
+    item.style.display = 'flex';
+    item.style.justifyContent = 'space-between';
+    item.style.alignItems = 'center';
+    item.style.marginBottom = '4px';
+    item.style.padding = '2px 4px';
+    item.style.background = '#333';
+    item.style.borderRadius = '3px';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = s.name;
+    nameSpan.style.overflow = 'hidden';
+    nameSpan.style.textOverflow = 'ellipsis';
+    nameSpan.style.whiteSpace = 'nowrap';
+    nameSpan.style.flex = '1';
+    item.appendChild(nameSpan);
+
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '×';
+    delBtn.style.background = 'transparent';
+    delBtn.style.border = 'none';
+    delBtn.style.color = '#ff5555';
+    delBtn.style.cursor = 'pointer';
+    delBtn.style.marginLeft = '8px';
+    delBtn.style.fontWeight = 'bold';
+    delBtn.onclick = () => {
+      stamps.splice(idx, 1);
+      updateStampList();
+      drawFrame();
+    };
+    item.appendChild(delBtn);
+
+    list.appendChild(item);
+  });
+  $('btnStampApply').disabled = false;
+}
+
+$('stampFile').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    // Center it by default
+    const sh = currentStampSize * (img.height / img.width);
+    stamps.push({
+      img,
+      name: file.name,
+      size: currentStampSize,
+      x: cv.width/2 - currentStampSize/2,
+      y: cv.height/2 - sh/2
+    });
+    
+    // Reset file input so the same file can be selected again if needed
+    $('stampFile').value = '';
+    
+    updateStampList();
+    drawFrame();
+  };
+  img.src = URL.createObjectURL(file);
+});
+$('stampSizeRange').addEventListener('input', e => {
+  currentStampSize = +e.target.value;
+  $('stampSizeVal').textContent = currentStampSize;
+});
+$('btnStampApply').addEventListener('click', () => {
+  if (stamps.length === 0) return;
+  const tmp = document.createElement('canvas');
+  for (let i = trimStart; i <= trimEnd; i++) {
+    const d = framesData[i].imageData;
+    tmp.width = d.width; tmp.height = d.height;
+    const tc = tmp.getContext('2d');
+    tc.putImageData(d, 0, 0);
+    stamps.forEach(s => {
+      const sh = s.size * (s.img.height / s.img.width);
+      tc.drawImage(s.img, s.x, s.y, s.size, sh);
+    });
+    framesData[i].imageData = tc.getImageData(0, 0, d.width, d.height);
+  }
+  stamps = []; 
+  updateStampList();
+  drawFrame();
+  alert('すべてのスタンプを全フレームに焼き込みました。');
+});
+$('btnStampRemove').addEventListener('click', () => {
+  stamps = []; 
+  updateStampList(); 
+  drawFrame();
+});
+
+/* =========================================================
+   E X P O R T   ( gifenc )
+   ========================================================= */
+function getTimestampString() {
+  const d = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+$('btnExport').addEventListener('click', async () => {
+  if (!framesData.length) return;
+  $('exportStatus').textContent = 'エンコード中…';
+  $('btnExport').disabled = true;
+
+  await new Promise(r => setTimeout(r, 50)); // let UI update
+  try {
+    const w = framesData[0].imageData.width, h = framesData[0].imageData.height;
+    const gif = window.GIFEnc.GIFEncoder();
+
+    // Bake stamp if present
+    const tmpC = document.createElement('canvas'); tmpC.width = w; tmpC.height = h;
+    const tmpCtx = tmpC.getContext('2d');
+
+    for (let i = trimStart; i <= trimEnd; i++) {
+      tmpCtx.putImageData(framesData[i].imageData, 0, 0);
+      stamps.forEach(s => {
+        const sh = s.size * (s.img.height / s.img.width);
+        tmpCtx.drawImage(s.img, s.x, s.y, s.size, sh);
+      });
+      const imgData = tmpCtx.getImageData(0, 0, w, h);
+      const palette = window.GIFEnc.quantize(imgData.data, 256);
+      const indexed = window.GIFEnc.applyPalette(imgData.data, palette);
+      gif.writeFrame(indexed, w, h, { palette, delay: framesData[i].delay });
+      $('exportStatus').textContent = `エンコード中… ${i - trimStart + 1}/${trimEnd - trimStart + 1}`;
+    }
+    gif.finish();
+    const output = gif.bytes();
+    const blob = new Blob([output], { type: 'image/gif' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `gifshoot_${getTimestampString()}.gif`;
+    a.click();
+    $('exportStatus').textContent = 'ダウンロード完了！';
+  } catch(e) {
+    console.error(e);
+    $('exportStatus').textContent = 'エラー: ' + e.message;
+  }
+  $('btnExport').disabled = false;
+});
+
+/* =========================================================
+   E X P O R T   I M A G E
+   ========================================================= */
+$('btnExportImage').addEventListener('click', () => {
+  if (!framesData.length) return;
+  
+  // Use the main canvas (cv) as it already has the current frame + mosaics + stamps rendered
+  const ext = document.querySelector('input[name="imgExt"]:checked').value;
+  const mimeType = `image/${ext}`;
+  const dataURL = cv.toDataURL(mimeType);
+  
+  const a = document.createElement('a');
+  a.href = dataURL;
+  a.download = `gifshoot_${getTimestampString()}.${ext}`;
+  a.click();
+});
+</script>
+</body>
+</html>
