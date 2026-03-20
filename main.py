@@ -7,6 +7,7 @@ import os
 import webbrowser
 import http.server
 import functools
+from urllib.parse import urlparse, parse_qs
 from recorder import GIFRecorder
 import config
 from selector import select_region
@@ -17,9 +18,32 @@ from controller import ControllerUI
 SERVER_PORT = 0  # will be assigned after bind
 httpd = None
 
+class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):
+        if self.path.startswith('/delete?file='):
+            query = parse_qs(urlparse(self.path).query)
+            filename = query.get('file', [''])[0]
+            if filename:
+                filename = os.path.basename(filename) # Basic security
+                filepath = os.path.join(self.directory, filename)
+                if os.path.exists(filepath) and filepath.endswith('.gif'):
+                    try:
+                        os.remove(filepath)
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(b'OK')
+                        return
+                    except Exception as e:
+                        print(f"Error deleting file: {e}")
+            self.send_response(500)
+            self.end_headers()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
 def start_http_server():
     global httpd, SERVER_PORT
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=config.SAVE_DIR)
+    handler = functools.partial(CustomHTTPRequestHandler, directory=config.SAVE_DIR)
     httpd = http.server.HTTPServer(('127.0.0.1', 0), handler)
     SERVER_PORT = httpd.server_address[1]
     print(f"HTTP server running at http://127.0.0.1:{SERVER_PORT}/")

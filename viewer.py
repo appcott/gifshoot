@@ -27,10 +27,19 @@ html_template = """<!DOCTYPE html>
     </div>
     
     <script>
-        function deleteGif(event, element, filename) {
+        async function deleteGif(event, element, filename) {
             event.stopPropagation();
-            if (confirm(`本当に ${filename} を削除しますか？\n※注意: 静的HTMLのためディスク上のファイルは自動削除されません。`)) {
-                element.closest('.card').style.display = 'none';
+            if (confirm(`本当に ${filename} を完全に削除しますか？\n（ゴミ箱には入らず直接削除されます）`)) {
+                try {
+                    const resp = await fetch(`/delete?file=${encodeURIComponent(filename)}`, { method: 'POST' });
+                    if (resp.ok) {
+                        element.closest('.card').style.display = 'none';
+                    } else {
+                        alert('ファイルの削除に失敗しました。');
+                    }
+                } catch (e) {
+                    alert('エラーが発生しました: ' + e);
+                }
             }
         }
         function openEditor(filename) {
